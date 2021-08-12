@@ -34,12 +34,16 @@ class AuthError(Exception):
         self.status_code = status_code
 
 
-def requires_scope(required_scope: str, token: str) -> bool:
+def requires_scope(required_scope: str, token: str) -> dict:
     """Determines if the required scope is present in the access token
 
     Args:
         required_scope (str): The scope required to access the resource
         token (str): The JWT token to get claims from
+
+    Returns:
+        This returns the unverified claims of the token when the required scope
+        is present
     """
     unverified_claims = jwt.get_unverified_claims(token)
 
@@ -52,7 +56,7 @@ def requires_scope(required_scope: str, token: str) -> bool:
 
     token_scopes = unverified_claims["scope"].split()
     if required_scope in token_scopes:
-        return True
+        return unverified_claims
 
     payload = {
         "code": "Unauthorized",
@@ -61,11 +65,18 @@ def requires_scope(required_scope: str, token: str) -> bool:
     raise AuthError(payload, 401)
 
 
-def validate_token(token: str):
-    """Validates an Access Token"""
+def validate_token(token: str, config: dict):
+    """Validates an Access Token
+    
+    Args:
+        token (str): Access token to validate
+        config (dict): A dictionary containing the following keys
+            - 'DOMAIN' for the Auth0 Domain
+            - 'ALGORITHMS' for the JWT algorithm (usually RS256)
+            - 'API_AUDIENCE' the API identifier in Auth0
+    """
     # Let's find our publicly available public keys,
     # which we'll use to validate the token's signature
-    config = set_up()
     jsonurl = urlopen("https://" + config["DOMAIN"] + "/.well-known/jwks.json")
     jwks = json.loads(jsonurl.read())
 
@@ -141,14 +152,14 @@ def validate_token(token: str):
         raise AuthError(payload, 401)
 
 
-def requires_auth(token):
-    """Determines if there is a valid Access Token available"""
-
+def requires_auth(token: str):
+    """Determines if there is a valid Access Token available
+    
+    Args:
+        token (str): Access token to validate
+    """
     try:
-        # Lets get the access token from the Authorization header
-        # token = get_token(headers)
-
-        # Once we have the token, we can validate it
+        # Validate the token
         validate_token(token)
     except AuthError as error:
         # Abort the request if something went wrong fetching the token
