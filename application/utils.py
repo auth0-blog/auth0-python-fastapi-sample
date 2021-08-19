@@ -44,6 +44,8 @@ class VerifyToken():
             ).key
         except jwt.exceptions.PyJWKClientError as error:
             return {"status": "error", "msg": error.__str__()}
+        except jwt.exceptions.DecodeError as error:
+            return {"status": "error", "msg": error.__str__()}
 
         try: 
             payload = jwt.decode(
@@ -53,7 +55,7 @@ class VerifyToken():
                 audience=self.config["API_AUDIENCE"],
                 issuer=self.config["ISSUER"],
             )
-        except:
+        except Exception as e:
             return {"status": "error", "message": str(e)}
 
         if self.scopes:
@@ -68,7 +70,7 @@ class VerifyToken():
 
         return payload
 
-    def _check_claims_with_expected(self, payload, claim_name, claim_type, expected_value):
+    def _check_claims(self, payload, claim_name, claim_type, expected_value):
 
         instance_check = isinstance(payload[claim_name], claim_type)
         result = {"status": "success", "status_code": 200}
