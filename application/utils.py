@@ -1,14 +1,9 @@
 import os
-import json
-
+import jwt
 from configparser import ConfigParser
-from typing import Dict
-from urllib.request import urlopen
-
-from jose import jwt
 
 
-def set_up() -> dict:
+def set_up():
     """Sets up configuration for the app"""
 
     env = os.getenv("ENV", ".config")
@@ -21,150 +16,83 @@ def set_up() -> dict:
         config = {
             "DOMAIN": os.getenv("DOMAIN", "your.domain.com"),
             "API_AUDIENCE": os.getenv("API_AUDIENCE", "your.audience.com"),
+            "ISSUER": os.getenv("ISSUER", "https://your.domain.com/"),
             "ALGORITHMS": os.getenv("ALGORITHMS", "RS256"),
         }
     return config
 
 
-class AuthError(Exception):
-    """Formats error response and append status code."""
-    def __init__(self, error: Dict[str, str], status_code: int):
-        super().__init__()
-        self.error = error
-        self.status_code = status_code
+class VerifyToken():
+    """Does all the token verification using PyJWT"""
 
+    def __init__(self, token, permissions=None, scopes=None):
+        self.token = token
+        self.permissions = permissions
+        self.scopes = scopes
+        self.config = set_up()
 
-def requires_scope(required_scope: str, token: str) -> dict:
-    """Determines if the required scope is present in the access token
+        # This gets the JWKS from a given URL and does processing so you can
+        # use any of the keys available
+        jwks_url = f'https://{self.config["DOMAIN"]}/.well-known/jwks.json'
+        self.jwks_client = jwt.PyJWKClient(jwks_url)
 
-    Args:
-        required_scope (str): The scope required to access the resource
-        token (str): The JWT token to get claims from
-
-    Returns:
-        This returns the unverified claims of the token when the required scope
-        is present
-    """
-    unverified_claims = jwt.get_unverified_claims(token)
-
-    if "scope" not in unverified_claims:
-        payload = {
-            "code": "missing_scope",
-            "description": "No scopes found in token"
-        }
-        raise AuthError(payload, 404)
-
-    token_scopes = unverified_claims["scope"].split()
-    if required_scope in token_scopes:
-        return unverified_claims
-
-    payload = {
-        "code": "Unauthorized",
-        "description": "You don't have access to this resource"
-    }
-    raise AuthError(payload, 401)
-
-
-def validate_token(token: str, config: dict):
-    """Validates an Access Token
-    
-    Args:
-        token (str): Access token to validate
-        config (dict): A dictionary containing the following keys
-            - 'DOMAIN' for the Auth0 Domain
-            - 'ALGORITHMS' for the JWT algorithm (usually RS256)
-            - 'API_AUDIENCE' the API identifier in Auth0
-    """
-    # Let's find our publicly available public keys,
-    # which we'll use to validate the token's signature
-    jsonurl = urlopen("https://" + config["DOMAIN"] + "/.well-known/jwks.json")
-    jwks = json.loads(jsonurl.read())
-
-    # We will parse the token and get the header for later use
-    unverified_header = jwt.get_unverified_header(token)
-
-    # Check if the token has a key ID
-    if "kid" not in unverified_header:
-        payload = {
-            "code": "missing_kid",
-            "description": "No kid found in token"
-        }
-        raise AuthError(payload, 401)
-
-    try:
-        # Check if we have a key with the key ID specified
-        # from the header available in our list of public keys
-        rsa_key = next(
-            key for key in jwks["keys"]
-            if key["kid"] == unverified_header["kid"]
-        )
-
+    def verify(self):
+        # This gets the 'kid' from the passed token
         try:
+            self.signing_key = self.jwks_client.get_signing_key_from_jwt(
+                self.token
+            ).key
+        except jwt.exceptions.PyJWKClientError as error:
+            return {"status": "error", "msg": error.__str__()}
+
+        try: 
             payload = jwt.decode(
-                token,
-                rsa_key,
-                algorithms=config["ALGORITHMS"],
-                audience=config["API_AUDIENCE"],
-                issuer="https://" + config["DOMAIN"] + "/",
+                self.token,
+                self.signing_key,
+                algorithms=self.config["ALGORITHMS"],
+                audience=self.config["API_AUDIENCE"],
+                issuer=self.config["ISSUER"],
             )
-            # _request_ctx_stack.top.current_user = payload
+        except:
+            return {"status": "error", "message": str(e)}
 
-        # The token is not valid if the expiry date is in the past
-        except jwt.ExpiredSignatureError:
-            raise AuthError(
-                {"code": "token_expired", "description": "Token is expired"},
-                401
-            )
+        if self.scopes:
+            result = self._check_claims(payload, 'scope', str, self.scopes.split(' '))
+            if result.get("error"):
+                return result
 
-        # The token should be issued by our Auth0 tenant,
-        # and to be used with our API (Audience)
-        except jwt.JWTClaimsError:
-            payload = {
-                "code": "invalid_claims",
-                "description":
-                    "Incorrect claims, please check the audience and issuer",
-            }
-            raise AuthError(payload, 401)
+        if self.permissions:
+            result = self._check_claims(payload, 'permissions', list, self.permissions)
+            if result.get("error"):
+                return result
 
-        # The token's signature is invalid
-        except jwt.JWTError:
-            payload = {
-                "code": "invalid_signature",
-                "description": "The signature is not valid",
-            }
-            raise AuthError(payload, 401)
+        return payload
 
-        # Something went wrong parsing the JWT
-        except Exception:
-            payload = {
-                "code": "invalid_header",
-                "description": "Unable to parse authentication token.",
-            }
-            raise AuthError(payload, 401)
+    def _check_claims_with_expected(self, payload, claim_name, claim_type, expected_value):
 
-    except StopIteration:
-        # We did not find the key with the ID specified in the token's header
-        # in the list of available public keys for our Auth0 tenant.
-        payload = {
-            "code": "invalid_header",
-            "description": "No valid public key found to validate signature.",
-        }
-        raise AuthError(payload, 401)
+        instance_check = isinstance(payload[claim_name], claim_type)
+        result = {"status": "success", "status_code": 200}
 
+        payload_claim = payload[claim_name]
 
-def requires_auth(token: str):
-    """Determines if there is a valid Access Token available
-    
-    Args:
-        token (str): Access token to validate
-    """
-    try:
-        # Validate the token
-        validate_token(token)
-    except AuthError as error:
-        # Abort the request if something went wrong fetching the token
-        # or validating the token.
-        # We return the status from the raised error,
-        # and return the error as a json response body
-        return json.dumps({"msg": error.error,
-                           "status_code": error.status_code})
+        if claim_name not in payload or not instance_check:
+            result["status"] = "error"
+            result["status_code"] = 400
+
+            result["code"] = f"missing_{claim_name}"
+            result["msg"] = f"No claim '{claim_name}' found in token."
+            return result
+
+        if claim_name == 'scope':
+            payload_claim = payload[claim_name].split(' ')
+
+        for value in expected_value:
+            if value not in payload_claim:
+                result["status"] = "error"
+                result["status_code"] = 403
+
+                result["code"] = f"insufficient_{claim_name}"
+                result["msg"] = (f"Insufficient {claim_name} ({value}). You "
+                                  "don't have access to this resource")
+                return result
+        return result
