@@ -60,12 +60,12 @@ class VerifyToken():
 
         if self.scopes:
             result = self._check_claims(payload, 'scope', str, self.scopes.split(' '))
-            if result.get("error"):
+            if result.get("status") == "error":
                 return result
 
         if self.permissions:
             result = self._check_claims(payload, 'permissions', list, self.permissions)
-            if result.get("error"):
+            if result.get("status") == "error":
                 return result
 
         return payload
