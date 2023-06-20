@@ -1,25 +1,29 @@
 import os
 import jwt
+
 from configparser import ConfigParser
+from functools import cache
+from dataclasses import dataclass
 
 
-def set_up():
+@dataclass(frozen=True)
+class MyConfig:
+    domain: str
+    api_audience: str
+    issuer: str
+    algorithms: str
+
+
+@cache
+def get_config():
     """Sets up configuration for the app"""
-
     env = os.getenv("ENV", ".config")
-
-    if env == ".config":
-        config = ConfigParser()
-        config.read(".config")
-        config = config["AUTH0"]
-    else:
-        config = {
-            "DOMAIN": os.getenv("DOMAIN", "your.domain.com"),
-            "API_AUDIENCE": os.getenv("API_AUDIENCE", "your.audience.com"),
-            "ISSUER": os.getenv("ISSUER", "https://your.domain.com/"),
-            "ALGORITHMS": os.getenv("ALGORITHMS", "RS256"),
-        }
-    return config
+    config = ConfigParser()
+    config.read(env)
+    config = config["AUTH0"]
+    return MyConfig(
+        config["DOMAIN"], config["API_AUDIENCE"], config["ISSUER"], config["ALGORITHMS"]
+    )
 
 
 class VerifyToken():
@@ -29,11 +33,11 @@ class VerifyToken():
         self.token = token
         self.permissions = permissions
         self.scopes = scopes
-        self.config = set_up()
+        self.config = get_config()
 
         # This gets the JWKS from a given URL and does processing so you can
         # use any of the keys available
-        jwks_url = f'https://{self.config["DOMAIN"]}/.well-known/jwks.json'
+        jwks_url = f'https://{self.config.domain}/.well-known/jwks.json'
         self.jwks_client = jwt.PyJWKClient(jwks_url)
 
     def verify(self):
@@ -51,9 +55,9 @@ class VerifyToken():
             payload = jwt.decode(
                 self.token,
                 self.signing_key,
-                algorithms=self.config["ALGORITHMS"],
-                audience=self.config["API_AUDIENCE"],
-                issuer=self.config["ISSUER"],
+                algorithms=self.config.algorithms,
+                audience=self.config.api_audience,
+                issuer=self.config.issuer,
             )
         except Exception as e:
             return {"status": "error", "message": str(e)}
