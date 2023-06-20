@@ -3,10 +3,10 @@
 
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, Response, status
+from fastapi import Depends, FastAPI, Response
 from fastapi.security import HTTPBearer
 
-from .utils import VerifyToken, verify_jwt
+from .utils import verify_jwt, verify_scope
 
 
 # Scheme for the Authorization header
@@ -22,8 +22,10 @@ def public():
 
     result = {
         "status": "success",
-        "msg": ("Hello from a public endpoint! You don't need to be "
-                "authenticated to see this.")
+        "msg": (
+            "Hello from a public endpoint! You don't need to be "
+            "authenticated to see this."
+        ),
     }
     return result
 
@@ -31,19 +33,13 @@ def public():
 @app.get("/api/private")
 def private(response: Response, token: Annotated[dict, Depends(verify_jwt)]):
     """A valid access token is required to access this route"""
-    return result
+    return token
 
 
 @app.get("/api/private-scoped")
-def private_scoped(response: Response, token: str = Depends(token_auth_scheme)):
+def private_scoped(response: Response, token: Annotated[dict, Depends(verify_jwt)]):
     """A valid access token and an appropriate scope are required to access
     this route
     """
-
-    result = VerifyToken(token.credentials, scopes="read:messages").verify()
-
-    if result.get("status"):
-        response.status_code = status.HTTP_400_BAD_REQUEST
-        return result
-
-    return result
+    verify_scope(token, "read:messages")
+    return token
