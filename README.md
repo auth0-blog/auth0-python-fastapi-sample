@@ -22,16 +22,6 @@ cp .example.config .config
 export ENV='.config'
 ```
 
-You can change this behavior by setting the following environment variables (remember to update the values accordingly):
-
-```console
-export ENV='variables'
-export DOMAIN='your.domain.auth0.com'
-export API_AUDIENCE='your.api.audience'
-export ISSUER='https://your.domain.auth0.com'
-export ALGORITHMS='RS256'
-```
-
 ### Spin up the server
 
 Once you've set your environment information below you'll find the commands you'll need.
