@@ -39,8 +39,8 @@ Once you've set your environment information below you'll find the commands you'
 1. Create and activate a python environment:
 
 ```console
-python3 -m venv .env
-source .env/bin/bash
+python3 -m venv .venv
+source .venv/bin/activate
 ```
 
 2. Install the needed dependencies with:
