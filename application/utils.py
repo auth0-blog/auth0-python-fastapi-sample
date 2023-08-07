@@ -60,7 +60,7 @@ class VerifyToken:
             raise UnauthorizedException(str(error))
 
         if len(security_scopes.scopes) > 0:
-            result = self._check_claims(payload, 'scope', security_scopes.scopes)
+            self._check_claims(payload, 'scope', security_scopes.scopes)
 
         return payload
 
