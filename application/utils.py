@@ -24,7 +24,6 @@ class VerifyToken:
     """Does all the token verification using PyJWT"""
 
     def __init__(self):
-        self.signing_key = None
         self.config = get_settings()
 
         # This gets the JWKS from a given URL and does processing so you can
@@ -41,7 +40,7 @@ class VerifyToken:
 
         # This gets the 'kid' from the passed token
         try:
-            self.signing_key = self.jwks_client.get_signing_key_from_jwt(
+            signing_key = self.jwks_client.get_signing_key_from_jwt(
                 token.credentials
             ).key
         except jwt.exceptions.PyJWKClientError as error:
@@ -52,7 +51,7 @@ class VerifyToken:
         try:
             payload = jwt.decode(
                 token.credentials,
-                self.signing_key,
+                signing_key,
                 algorithms=self.config.auth0_algorithms,
                 audience=self.config.auth0_api_audience,
                 issuer=self.config.auth0_issuer,
