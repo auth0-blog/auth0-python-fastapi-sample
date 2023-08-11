@@ -1,100 +1,78 @@
-import os
+from typing import Optional
+
 import jwt
-from configparser import ConfigParser
+from fastapi import Depends, HTTPException, status
+from fastapi.security import SecurityScopes, HTTPAuthorizationCredentials, HTTPBearer
+
+from application.config import get_settings
 
 
-def set_up():
-    """Sets up configuration for the app"""
-
-    env = os.getenv("ENV", ".config")
-
-    if env == ".config":
-        config = ConfigParser()
-        config.read(".config")
-        config = config["AUTH0"]
-    else:
-        config = {
-            "DOMAIN": os.getenv("DOMAIN", "your.domain.com"),
-            "API_AUDIENCE": os.getenv("API_AUDIENCE", "your.audience.com"),
-            "ISSUER": os.getenv("ISSUER", "https://your.domain.com/"),
-            "ALGORITHMS": os.getenv("ALGORITHMS", "RS256"),
-        }
-    return config
+class UnauthorizedException(HTTPException):
+    def __init__(self, detail: str, **kwargs):
+        """Returns HTTP 403"""
+        super().__init__(status.HTTP_403_FORBIDDEN, detail=detail)
 
 
-class VerifyToken():
+class UnauthenticatedException(HTTPException):
+    def __init__(self):
+        super().__init__(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Requires authentication"
+        )
+
+
+class VerifyToken:
     """Does all the token verification using PyJWT"""
 
-    def __init__(self, token, permissions=None, scopes=None):
-        self.token = token
-        self.permissions = permissions
-        self.scopes = scopes
-        self.config = set_up()
+    def __init__(self):
+        self.config = get_settings()
 
         # This gets the JWKS from a given URL and does processing so you can
         # use any of the keys available
-        jwks_url = f'https://{self.config["DOMAIN"]}/.well-known/jwks.json'
+        jwks_url = f'https://{self.config.auth0_domain}/.well-known/jwks.json'
         self.jwks_client = jwt.PyJWKClient(jwks_url)
 
-    def verify(self):
+    async def verify(self,
+                     security_scopes: SecurityScopes,
+                     token: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer())
+                     ):
+        if token is None:
+            raise UnauthenticatedException
+
         # This gets the 'kid' from the passed token
         try:
-            self.signing_key = self.jwks_client.get_signing_key_from_jwt(
-                self.token
+            signing_key = self.jwks_client.get_signing_key_from_jwt(
+                token.credentials
             ).key
         except jwt.exceptions.PyJWKClientError as error:
-            return {"status": "error", "msg": error.__str__()}
+            raise UnauthorizedException(str(error))
         except jwt.exceptions.DecodeError as error:
-            return {"status": "error", "msg": error.__str__()}
+            raise UnauthorizedException(str(error))
 
-        try: 
+        try:
             payload = jwt.decode(
-                self.token,
-                self.signing_key,
-                algorithms=self.config["ALGORITHMS"],
-                audience=self.config["API_AUDIENCE"],
-                issuer=self.config["ISSUER"],
+                token.credentials,
+                signing_key,
+                algorithms=self.config.auth0_algorithms,
+                audience=self.config.auth0_api_audience,
+                issuer=self.config.auth0_issuer,
             )
-        except Exception as e:
-            return {"status": "error", "message": str(e)}
+        except Exception as error:
+            raise UnauthorizedException(str(error))
 
-        if self.scopes:
-            result = self._check_claims(payload, 'scope', str, self.scopes.split(' '))
-            if result.get("error"):
-                return result
-
-        if self.permissions:
-            result = self._check_claims(payload, 'permissions', list, self.permissions)
-            if result.get("error"):
-                return result
+        if len(security_scopes.scopes) > 0:
+            self._check_claims(payload, 'scope', security_scopes.scopes)
 
         return payload
 
-    def _check_claims(self, payload, claim_name, claim_type, expected_value):
-
-        instance_check = isinstance(payload[claim_name], claim_type)
-        result = {"status": "success", "status_code": 200}
+    def _check_claims(self, payload, claim_name, expected_value):
+        if claim_name not in payload:
+            raise UnauthorizedException(detail=f'No claim "{claim_name}" found in token')
 
         payload_claim = payload[claim_name]
-
-        if claim_name not in payload or not instance_check:
-            result["status"] = "error"
-            result["status_code"] = 400
-
-            result["code"] = f"missing_{claim_name}"
-            result["msg"] = f"No claim '{claim_name}' found in token."
-            return result
 
         if claim_name == 'scope':
             payload_claim = payload[claim_name].split(' ')
 
         for value in expected_value:
             if value not in payload_claim:
-                result["status"] = "error"
-                result["status_code"] = 403
-
-                result["code"] = f"insufficient_{claim_name}"
-                result["msg"] = (f"Insufficient {claim_name} ({value}). You "
-                                  "don't have access to this resource")
-                return result
-        return result
+                raise UnauthorizedException(detail=f'Missing "{claim_name}" scope')

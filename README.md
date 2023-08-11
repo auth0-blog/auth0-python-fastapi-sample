@@ -8,28 +8,23 @@ In order to run the example you need to have `python3` (any version higher than 
 
 ### Configuration
 
-### Configuration
-
 The configuration you'll need is mostly information from Auth0, you'll need both the tentant domain and the API information.
 
-This app reads its configuration information from a `.config` file by default.
+This app reads its configuration information from a `.env` file by default.
 
-To create a `.config` file you can copy the `.example.config` file and fill the values accordingly:
+To create a `.env` file you can copy the `.env.example` file and fill the values accordingly:
 
 ```console
-cp .example.config .config
-# update the config file for the correct values
-export ENV='.config'
+cp .env.example .env
 ```
 
-You can change this behavior by setting the following environment variables (remember to update the values accordingly):
+Alternatively you can use environment variables to define your application's settings (remember to update the values accordingly):
 
 ```console
-export ENV='variables'
-export DOMAIN='your.domain.auth0.com'
-export API_AUDIENCE='your.api.audience'
-export ISSUER='https://your.domain.auth0.com'
-export ALGORITHMS='RS256'
+export AUTH0_DOMAIN='your.domain.auth0.com'
+export AUTH0_API_AUDIENCE='your.api.audience'
+export AUTH0_ISSUER='https://your.domain.auth0.com'
+export AUTH0_ALGORITHMS='RS256'
 ```
 
 ### Spin up the server
@@ -39,8 +34,8 @@ Once you've set your environment information below you'll find the commands you'
 1. Create and activate a python environment:
 
 ```console
-python3 -m venv .env
-source .env/bin/bash
+python3 -m venv .venv
+source .venv/bin/activate
 ```
 
 2. Install the needed dependencies with:
